@@ -3,7 +3,7 @@ name = "doi-pdf"
 version = "0.0.1"
 description = "Given a DOI, find an open access PDF and its CrossRef metadata."
 readme = "README.md"
-requires-python = ">=3.15"
+requires-python = ">=3.14"
 dependencies = [
     "requests>=2.31",
     "playwright>=1.44",
@@ -35,7 +35,7 @@ line-length = 100
 extend-select = ["I", "UP", "B"]
 
 [tool.ty.environment]
-python-version = "3.15"
+python-version = "3.14"
 
 [tool.ty.src]
 include = ["src", "tests"]
