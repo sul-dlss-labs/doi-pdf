@@ -70,6 +70,21 @@ def test_find_pdf_url_logs_diagnostics(caplog: pytest.LogCaptureFixture) -> None
     assert "https://example.org/found.pdf" in blob
 
 
+def test_http_pdf_bytes_accepts_a_pdf_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(core, "_http_get", lambda url: (200, b"%PDF-1.7 body", True))
+    assert core._http_pdf_bytes("https://x/y.pdf") == b"%PDF-1.7 body"
+
+
+def test_http_pdf_bytes_rejects_non_pdf_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(core, "_http_get", lambda url: (200, b"<html>nope</html>", True))
+    assert core._http_pdf_bytes("https://x/y") is None
+
+
+def test_http_pdf_bytes_rejects_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(core, "_http_get", lambda url: (403, b"", False))
+    assert core._http_pdf_bytes("https://x/y") is None
+
+
 class StubResolver:
     """A resolver returning a fixed URL, for download-fall-through tests."""
 

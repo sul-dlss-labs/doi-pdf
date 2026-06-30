@@ -62,22 +62,42 @@ def find_pdf_url(
     return None
 
 
+def _http_get(url: str) -> tuple[int, bytes, bool]:
+    """GET *url*, returning ``(status_code, body, ok)``.
+
+    When ``curl_cffi`` is installed the request impersonates Chrome's TLS/HTTP2
+    fingerprint (and sends a matching Chrome UA), which clears the lighter
+    Cloudflare / AWS WAF checks that reject Python's default TLS handshake
+    regardless of headers -- often without needing the browser fallback at all.
+    Falls back to plain ``requests`` (with the descriptive UA) when ``curl_cffi``
+    is not available.
+    """
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError:
+        resp = requests.get(
+            url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=60,
+            allow_redirects=True,
+        )
+        return resp.status_code, resp.content, resp.ok
+
+    resp = curl_requests.get(url, impersonate="chrome", timeout=60, allow_redirects=True)
+    return resp.status_code, resp.content, resp.ok
+
+
 def _http_pdf_bytes(url: str) -> bytes | None:
     """Download *url* with a plain HTTP client, returning bytes only if a PDF."""
     log.info("downloading PDF: %s", redact(url))
-    resp = requests.get(
-        url,
-        headers={"User-Agent": USER_AGENT},
-        timeout=60,
-        allow_redirects=True,
-    )
-    if not resp.ok:
-        log.info("direct download failed: HTTP %s", resp.status_code)
+    status, content, ok = _http_get(url)
+    if not ok:
+        log.info("direct download failed: HTTP %s", status)
         return None
-    if not resp.content.startswith(b"%PDF"):
-        log.info("direct download was not a PDF (got %d bytes)", len(resp.content))
+    if not content.startswith(b"%PDF"):
+        log.info("direct download was not a PDF (got %d bytes)", len(content))
         return None
-    return resp.content
+    return content
 
 
 def _download_pdf(url: str, path: Path) -> Path | None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import os
 import sys
 import time
 from collections.abc import Sequence
@@ -141,6 +142,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"(default: {DEFAULT_WAIT_SECONDS}; 0 to disable)",
     )
     parser.add_argument(
+        "--no-headless",
+        action="store_true",
+        help="run the browser fallback visibly instead of headless; a real "
+        "(or virtual, e.g. Xvfb) display is then required. A visible browser "
+        "passes some bot checks that block headless Chromium.",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -161,6 +169,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     # Pick up OPENALEX_API_KEY (and friends) from a local .env if present.
     load_dotenv()
+    if args.no_headless:
+        # browser.py reads this to decide headless vs. headful (single source of
+        # truth), so the flag just sets it for this process.
+        os.environ["DOI_PDF_HEADLESS"] = "0"
     try:
         _configure_logging(args.verbose, args.log)
     except OSError as exc:

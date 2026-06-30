@@ -15,10 +15,16 @@ dependencies = [
 doi-pdf = "doi_pdf.cli:main"
 
 [project.optional-dependencies]
+# Browser-grade TLS fingerprinting for the pre-browser download tier; lets the
+# plain HTTP client clear lighter Cloudflare / AWS WAF checks (see core._http_get).
+stealth = [
+    "curl_cffi>=0.7",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.10",
     "ty>=0.0.55",
+    "curl_cffi>=0.7",
 ]
 
 [build-system]

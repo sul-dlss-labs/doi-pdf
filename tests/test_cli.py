@@ -1,6 +1,7 @@
 """Tests for the doi-pdf command line interface."""
 
 import logging
+import os
 import re
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -85,6 +86,37 @@ def test_main_processes_multiple_dois_with_wait(
     assert fetched == ["10.1371/journal.pone.0234245", "10.7554/elife.54129"]
     assert slept == [2.5]  # exactly one pause, between the two DOIs
     assert code == 1  # both returned no PDF
+
+
+def test_no_headless_flag_sets_browser_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--no-headless asks the browser fallback to run headful via its env var."""
+    monkeypatch.delenv("DOI_PDF_HEADLESS", raising=False)
+
+    def fake_fetch(
+        doi: str, dest: Path | str = ".", resolvers: Sequence[object] | None = None
+    ) -> FetchResult:
+        return FetchResult(doi, True, Path(dest) / "x.json", None, None)
+
+    monkeypatch.setattr(cli, "fetch", fake_fetch)
+
+    main(["10.1371/journal.pone.0234245", "--dest", str(tmp_path), "--no-headless"])
+    assert os.environ["DOI_PDF_HEADLESS"] == "0"
+
+
+def test_without_no_headless_flag_env_is_left_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DOI_PDF_HEADLESS", raising=False)
+
+    def fake_fetch(
+        doi: str, dest: Path | str = ".", resolvers: Sequence[object] | None = None
+    ) -> FetchResult:
+        return FetchResult(doi, True, Path(dest) / "x.json", None, None)
+
+    monkeypatch.setattr(cli, "fetch", fake_fetch)
+
+    main(["10.1371/journal.pone.0234245", "--dest", str(tmp_path)])
+    assert "DOI_PDF_HEADLESS" not in os.environ
 
 
 def test_main_reads_dois_from_input_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
