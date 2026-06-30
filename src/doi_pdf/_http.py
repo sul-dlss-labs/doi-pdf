@@ -6,9 +6,7 @@ import re
 
 # A descriptive User-Agent gets us into the OpenAlex / CrossRef "polite" pools
 # and avoids being treated as an anonymous bot by publishers.
-USER_AGENT = (
-    "doi-pdf/0.0.1 (https://github.com/sul-dlss/doi-pdf; mailto:rialto-service@lists.stanford.edu)"
-)
+USER_AGENT = "doi-pdf/0.0.1 (https://github.com/sul-dlss-labs/doi-pdf; mailto:rialto-service@lists.stanford.edu)"
 
 # Publisher and repository web servers often refuse the descriptive UA above,
 # so the headless browser presents an ordinary Chrome UA instead.

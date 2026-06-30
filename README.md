@@ -16,11 +16,24 @@ The utility currently uses the OpenAlex, Internet Archive Scholar, Web page
 extraction to try and locate a PDF. Read on for more details about how
 resolution works.
 
+## Run it without installing
+
+doi-pdf isn't on PyPI yet, so the quickest way to try it is to run it straight
+from GitHub with [uv](https://docs.astral.sh/uv/)'s `uvx`:
+
+    uvx --from git+https://github.com/sul-dlss-labs/doi-pdf doi-pdf https://doi.org/10.1371/journal.pone.0234245
+
+`uvx` fetches a compatible Python and the dependencies into a temporary
+environment and runs the `doi-pdf` command — nothing to install or clean up. The
+OpenAlex and Internet Archive resolvers work out of the box; the landing-page
+resolver and the headless-browser download fallback additionally need a one-time
+`playwright install chromium` (see below).
+
 ## Install
 
-doi-pdf needs Python 3.15+. Install from the repository:
+For repeated use, install it (doi-pdf needs Python 3.15+):
 
-    uv pip install git+https://github.com/sul-dlss/doi-pdf
+    uv pip install git+https://github.com/sul-dlss-labs/doi-pdf
 
 The publisher-landing-page resolver and the browser download fallback drive a
 headless browser, so install one once:
