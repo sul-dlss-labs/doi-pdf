@@ -1,5 +1,7 @@
 # doi-pdf
 
+[![.github/workflows/test.yml](https://github.com/sul-dlss-labs/doi-pdf/actions/workflows/test.yml/badge.svg)](https://github.com/sul-dlss-labs/doi-pdf/actions/workflows/test.yml)
+
 doi-pdf is a command line tool and Python library that, given a DOI, tries to
 find an open access PDF for it and downloads the PDF along with the item's
 CrossRef metadata.
