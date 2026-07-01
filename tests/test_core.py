@@ -70,18 +70,43 @@ def test_find_pdf_url_logs_diagnostics(caplog: pytest.LogCaptureFixture) -> None
     assert "https://example.org/found.pdf" in blob
 
 
-def test_http_pdf_bytes_accepts_a_pdf_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(core, "_http_get", lambda url: (200, b"%PDF-1.7 body", True))
+def test_http_pdf_bytes_accepts_a_pdf_from_plain_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(core, "_requests_get", lambda url: (200, b"%PDF-1.7 body", True))
+    # The plain attempt succeeds, so impersonation must not even be tried.
+    monkeypatch.setattr(
+        core, "_curl_get", lambda url: pytest.fail("should not escalate on success")
+    )
     assert core._http_pdf_bytes("https://x/y.pdf") == b"%PDF-1.7 body"
 
 
+def test_http_pdf_bytes_escalates_to_impersonation_when_plain_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(core, "_requests_get", lambda url: (403, b"blocked", False))
+    monkeypatch.setattr(core, "_curl_get", lambda url: (200, b"%PDF-1.7 via curl", True))
+    assert core._http_pdf_bytes("https://x/y.pdf") == b"%PDF-1.7 via curl"
+
+
 def test_http_pdf_bytes_rejects_non_pdf_body(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(core, "_http_get", lambda url: (200, b"<html>nope</html>", True))
+    monkeypatch.setattr(core, "_requests_get", lambda url: (200, b"<html>nope</html>", True))
+    monkeypatch.setattr(core, "_curl_get", lambda url: None)
     assert core._http_pdf_bytes("https://x/y") is None
 
 
-def test_http_pdf_bytes_rejects_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(core, "_http_get", lambda url: (403, b"", False))
+def test_http_pdf_bytes_returns_none_when_both_tiers_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(core, "_requests_get", lambda url: (403, b"", False))
+    monkeypatch.setattr(core, "_curl_get", lambda url: (403, b"still blocked", False))
+    assert core._http_pdf_bytes("https://x/y") is None
+
+
+def test_http_pdf_bytes_handles_missing_curl_cffi(monkeypatch: pytest.MonkeyPatch) -> None:
+    # _curl_get returns None when curl_cffi is unavailable; we just give up cleanly.
+    monkeypatch.setattr(core, "_requests_get", lambda url: (404, b"", False))
+    monkeypatch.setattr(core, "_curl_get", lambda url: None)
     assert core._http_pdf_bytes("https://x/y") is None
 
 

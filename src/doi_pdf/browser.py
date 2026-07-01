@@ -69,10 +69,12 @@ _STEALTH_INIT = "Object.defineProperty(navigator, 'webdriver', {get: () => undef
 
 # Page titles Cloudflare serves while a challenge is running.
 _CHALLENGE_TITLES = {"just a moment...", "attention required! | cloudflare"}
-# Markers of an in-flight challenge in the page's DOM.
+# Markers of an *in-flight* challenge in the page's DOM. Deliberately narrow:
+# the ``/cdn-cgi/challenge-platform/`` script Cloudflare injects is also present
+# on ordinary protected pages, so matching on it mis-flags benign pages as
+# challenges -- we only look for the interstitial's own widgets.
 _CHALLENGE_SELECTOR = (
-    "#challenge-form, #challenge-running, "
-    "script[src*='challenge-platform'], iframe[src*='challenges.cloudflare.com']"
+    "#challenge-form, #challenge-running, iframe[src*='challenges.cloudflare.com']"
 )
 
 
@@ -178,16 +180,15 @@ def download_pdf(url: str, timeout: float = 30.0) -> bytes | None:
 
             # A CDN bot wall may stand between us and the content. Give a
             # self-clearing challenge a chance before treating the page as real.
-            challenged = False
+            # Whether or not it clears, we still fall through to PDF extraction
+            # below -- waiting is a bonus, never a new way to fail.
             if _looks_like_challenge(page):
-                challenged = True
-                if not _wait_out_challenge(page, url):
-                    return None
+                _wait_out_challenge(page, url)
 
-            # If the navigation itself delivered the PDF, use it. Skip this when
-            # we were challenged -- the captured response is the interstitial,
-            # and the real content is re-requested in _embedded_pdf below.
-            if response is not None and not challenged:
+            # If the navigation itself delivered the PDF, use it. (After a
+            # challenge this response is the stale interstitial -- not a PDF --
+            # so it harmlessly falls through to re-extraction below.)
+            if response is not None:
                 try:
                     navigated = response.body()
                 except PlaywrightError:
