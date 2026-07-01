@@ -33,7 +33,7 @@ resolver and the headless-browser download fallback additionally need a one-time
 
 ## Install
 
-For repeated use, install it (doi-pdf needs Python 3.15+):
+For repeated use, install it (doi-pdf needs Python 3.14+):
 
     uv pip install git+https://github.com/sul-dlss-labs/doi-pdf
 
