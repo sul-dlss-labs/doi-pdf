@@ -17,6 +17,7 @@ from doi_pdf import (
     OpenAlexContentResolver,
     OpenAlexResolver,
     build_resolvers,
+    resolvers,
 )
 
 # Known gold-OA DOIs.
@@ -82,6 +83,11 @@ class TestInternetArchiveScholarResolver:
 
 
 @pytest.mark.network
+def test_landing_page_resolver_skips_without_a_browser(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(resolvers, "browser_available", lambda headless=None: False)
+    assert LandingPageResolver().find_pdf_url(PLOS_DOI) is None
+
+
 @pytest.mark.browser
 class TestLandingPageResolver:
     def test_finds_pdf_via_rendered_landing_page(self) -> None:

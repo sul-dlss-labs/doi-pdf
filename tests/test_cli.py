@@ -12,6 +12,12 @@ from doi_pdf import FetchResult, cli
 from doi_pdf.cli import _read_dois, main
 
 
+@pytest.fixture(autouse=True)
+def browser_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pretend Chromium is installed, so main() doesn't probe a real browser."""
+    monkeypatch.setattr(cli, "browser_available", lambda headless=None: True)
+
+
 @pytest.fixture
 def reset_doi_pdf_logging() -> Iterator[None]:
     """Detach any handlers configured on the doi_pdf logger after the test."""
@@ -193,6 +199,26 @@ def test_main_logs_traceback_for_a_failed_doi_and_continues(
     console = captured.out + captured.err
     assert "error: 10.1234/bad: resolver blew up" in console
     assert "Traceback" not in console
+
+
+def test_main_warns_once_when_the_browser_is_not_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "browser_available", lambda headless=None: False)
+
+    def fake_fetch(
+        doi: str, dest: Path | str = ".", resolvers: Sequence[object] | None = None
+    ) -> FetchResult:
+        return FetchResult(doi, "crossref", Path(dest) / "x.json", None, None)
+
+    monkeypatch.setattr(cli, "fetch", fake_fetch)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+
+    main(["10.1234/aaa", "10.1234/bbb", "--dest", str(tmp_path)])
+
+    err = capsys.readouterr().err
+    assert err.count("Chromium isn't installed") == 1  # once, not per DOI
+    assert "playwright install chromium" in err
 
 
 def test_main_log_option_reports_bad_path(tmp_path: Path, reset_doi_pdf_logging: None) -> None:

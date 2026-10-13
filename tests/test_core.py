@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import requests
 
-from doi_pdf import core, find_pdf_url
+from doi_pdf import browser, core, find_pdf_url
 from doi_pdf.core import fetch
 from doi_pdf.metadata import MetadataResponseError
 
@@ -152,6 +152,28 @@ def test_fetch_falls_through_to_next_resolver_when_download_fails(
     assert result.resolver == "works"  # the report needs the winning resolver's name
     # Both resolvers' URLs were attempted, in order, before one succeeded.
     assert attempted == ["https://bad.example/no.pdf", "https://good.example/ok.pdf"]
+
+
+def test_fetch_falls_through_when_the_browser_is_not_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A URL that needs the browser fallback is skipped, not fatal, without Chromium."""
+    monkeypatch.setattr(core, "crossref_metadata", lambda doi: {"DOI": doi})
+    monkeypatch.setattr(browser, "browser_available", lambda headless=None: False)
+
+    def plain_http(url: str) -> bytes | None:
+        # Only the second URL downloads over plain HTTP; the first would need
+        # the browser fallback.
+        return b"%PDF-1.7 stub" if url == "https://good.example/ok.pdf" else None
+
+    monkeypatch.setattr(core, "_http_pdf_bytes", plain_http)
+
+    needs_browser = StubResolver("needs-browser", "https://viewer.example/page")
+    direct = StubResolver("direct", "https://good.example/ok.pdf")
+    result = core.fetch("10.1234/abc", dest=tmp_path, resolvers=[needs_browser, direct])
+
+    assert result.resolver == "direct"
+    assert result.pdf_path is not None and result.pdf_path.read_bytes().startswith(b"%PDF")
 
 
 def test_fetch_returns_no_pdf_when_every_download_fails(

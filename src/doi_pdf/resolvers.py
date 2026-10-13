@@ -23,6 +23,7 @@ from urllib.parse import urljoin
 import requests
 
 from ._http import DEFAULT_TIMEOUT, USER_AGENT, redact
+from .browser import browser_available
 
 log = logging.getLogger(__name__)
 
@@ -192,6 +193,9 @@ class LandingPageResolver:
         from playwright.sync_api import sync_playwright
 
         url = "https://doi.org/" + doi
+        if not browser_available(headless=True):
+            log.info("[%s] skipping: Chromium is not installed", self.name)
+            return None
         log.info("[%s] rendering %s", self.name, url)
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
