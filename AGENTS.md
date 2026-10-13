@@ -6,8 +6,11 @@ metadata. This file is for humans and coding agents who want to work on it.
 
 ## Setup
 
-The project uses [uv](https://docs.astral.sh/uv/) and targets Python 3.15
-(pinned in `.python-version`).
+The project uses [uv](https://docs.astral.sh/uv/) and supports Python 3.11+
+(`requires-python`). CI tests the 3.11 floor and the newest release (3.15).
+Don't use language or stdlib features newer than 3.11: `ty` checks against 3.11
+to catch them. `.python-version` is gitignored, so pin a local interpreter there
+if you like.
 
 ```sh
 uv sync --extra dev                  # create the venv; install the package + locked dev tools

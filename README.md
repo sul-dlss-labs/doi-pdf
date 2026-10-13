@@ -33,28 +33,42 @@ The utility currently uses the OpenAlex, Internet Archive Scholar, Web page
 extraction to try and locate a PDF. Read on for more details about how
 resolution works.
 
+## Requirements
+
+- Python 3.11 or newer.
+- **A Chromium browser for [Playwright](https://playwright.dev/python/),
+  installed once with `playwright install chromium`.** doi-pdf drives a headless
+  browser for the landing-page resolver and whenever a plain HTTP download
+  fails, so this isn't optional: without it, a DOI fails with an error as soon
+  as one of its candidate URLs needs the browser, even if a later source would
+  have worked. The browser goes into Playwright's shared cache (e.g.
+  `~/Library/Caches/ms-playwright` on macOS, `~/.cache/ms-playwright` on Linux),
+  not into the Python environment, so you only do this once per machine and
+  Playwright version.
+
 ## Run it without installing
 
 doi-pdf isn't on PyPI yet, so the quickest way to try it is to run it straight
-from GitHub with [uv](https://docs.astral.sh/uv/)'s `uvx`:
+from GitHub with [uv](https://docs.astral.sh/uv/)'s `uvx`. First install the
+browser, using the same Playwright version doi-pdf resolves to:
+
+    uvx --from git+https://github.com/sul-dlss-labs/doi-pdf playwright install chromium
+
+uv warns that `playwright` comes from a dependency and suggests
+`uvx --from playwright playwright`; ignore that, since it could install a
+browser for a different Playwright version than the one doi-pdf uses. Then run
+it:
 
     uvx --from git+https://github.com/sul-dlss-labs/doi-pdf doi-pdf https://doi.org/10.1371/journal.pone.0234245
 
 `uvx` fetches a compatible Python and the dependencies into a temporary
-environment and runs the `doi-pdf` command — nothing to install or clean up. The
-OpenAlex and Internet Archive resolvers work out of the box; the landing-page
-resolver and the headless-browser download fallback additionally need a one-time
-`playwright install chromium` (see below).
+environment and runs the command, with nothing else to install or clean up.
 
 ## Install
 
-For repeated use, install it (doi-pdf needs Python 3.14+):
+For repeated use, install it, then install the browser:
 
     uv pip install git+https://github.com/sul-dlss-labs/doi-pdf
-
-The publisher-landing-page resolver and the browser download fallback drive a
-headless browser, so install one once:
-
     playwright install chromium
 
 ## Command line
