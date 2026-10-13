@@ -4,10 +4,13 @@ The coordinator logic is exercised with in-memory fake resolvers so these
 tests are deterministic and need no network.
 """
 
+import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+import requests
 
 from doi_pdf import core, find_pdf_url
 from doi_pdf.core import fetch
@@ -165,6 +168,124 @@ def test_fetch_returns_no_pdf_when_every_download_fails(
     assert result.resolver is None
 
 
+def _no_record(doi: str) -> dict[str, object]:
+    raise LookupError(doi)
+
+
+def test_fetch_falls_back_to_datacite_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When CrossRef has no record, the DataCite record is written instead."""
+    monkeypatch.setattr(core, "crossref_metadata", _no_record)
+    monkeypatch.setattr(core, "datacite_metadata", lambda doi: {"id": doi})
+
+    result = core.fetch("10.48550/arxiv.1234.5678", dest=tmp_path, resolvers=[])
+
+    assert result.metadata == "datacite"
+    assert not result.crossref
+    assert result.json_path == tmp_path / "10.48550-arxiv.1234.5678.json"
+    assert result.json_path is not None
+    assert json.loads(result.json_path.read_text()) == {
+        "source": "datacite",
+        "record": {"id": "10.48550/arxiv.1234.5678"},
+    }
+
+
+def test_fetch_writes_no_json_without_any_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(core, "crossref_metadata", _no_record)
+    monkeypatch.setattr(core, "datacite_metadata", _no_record)
+
+    result = core.fetch("10.1234/abc", dest=tmp_path, resolvers=[])
+
+    assert result.metadata is None
+    assert result.json_path is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_fetch_skips_datacite_when_crossref_has_a_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(core, "crossref_metadata", lambda doi: {"DOI": doi})
+
+    def fail_datacite(doi: str) -> dict[str, object]:
+        raise AssertionError("DataCite should not be queried")
+
+    monkeypatch.setattr(core, "datacite_metadata", fail_datacite)
+
+    result = core.fetch("10.1234/abc", dest=tmp_path, resolvers=[])
+
+    assert result.metadata == "crossref"
+    assert result.json_path is not None
+    assert json.loads(result.json_path.read_text()) == {
+        "source": "crossref",
+        "record": {"DOI": "10.1234/abc"},
+    }
+
+
+def _timeout(doi: str) -> dict[str, object]:
+    raise requests.Timeout(f"timed out: {doi}")
+
+
+def _malformed(doi: str) -> dict[str, object]:
+    raise ValueError(f"unexpected response for {doi}")
+
+
+def test_fetch_tries_datacite_when_crossref_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A transient CrossRef failure falls through to DataCite, with a warning."""
+    monkeypatch.setattr(core, "crossref_metadata", _timeout)
+    monkeypatch.setattr(core, "datacite_metadata", lambda doi: {"id": doi})
+
+    with caplog.at_level(logging.WARNING, logger="doi_pdf"):
+        result = core.fetch("10.1234/abc", dest=tmp_path, resolvers=[])
+
+    assert result.metadata == "datacite"
+    assert "crossref metadata lookup failed" in caplog.text
+
+
+@pytest.mark.parametrize("failure", [_timeout, _malformed])
+def test_fetch_still_finds_pdf_when_metadata_lookups_fail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Callable[[str], dict[str, object]],
+) -> None:
+    """Metadata errors (timeouts, 5xx, bad JSON) must not abort PDF retrieval."""
+    monkeypatch.setattr(core, "crossref_metadata", failure)
+    monkeypatch.setattr(core, "datacite_metadata", failure)
+
+    def fake_download(url: str, path: Path) -> Path | None:
+        path.write_bytes(b"%PDF-1.7 stub")
+        return path
+
+    monkeypatch.setattr(core, "_download_pdf", fake_download)
+
+    result = core.fetch(
+        "10.1234/abc", dest=tmp_path, resolvers=[StubResolver("ok", "https://x.example/a.pdf")]
+    )
+
+    assert result.metadata is None
+    assert result.json_path is None
+    assert result.pdf_path is not None
+    assert result.resolver == "ok"
+
+
+def test_fetch_propagates_unexpected_metadata_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only lookup/transport/response errors are absorbed; bugs still surface."""
+
+    def buggy(doi: str) -> dict[str, object]:
+        raise TypeError("bug")
+
+    monkeypatch.setattr(core, "crossref_metadata", buggy)
+
+    with pytest.raises(TypeError):
+        core.fetch("10.1234/abc", dest=tmp_path, resolvers=[])
+
+
 @pytest.mark.network
 @pytest.mark.browser
 def test_fetch_writes_pdf_and_json(tmp_path: Path) -> None:
@@ -173,6 +294,9 @@ def test_fetch_writes_pdf_and_json(tmp_path: Path) -> None:
 
     assert result.json_path == tmp_path / "10.1371-journal.pone.0234245.json"
     assert result.json_path is not None and result.json_path.exists()
+    saved = json.loads(result.json_path.read_text())
+    assert saved["source"] == "crossref"
+    assert saved["record"]["DOI"].lower() == "10.1371/journal.pone.0234245"
     if result.pdf_path is not None:
         assert result.pdf_path == tmp_path / "10.1371-journal.pone.0234245.pdf"
         assert result.pdf_path.exists()

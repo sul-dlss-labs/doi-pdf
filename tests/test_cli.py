@@ -66,7 +66,7 @@ def test_main_processes_multiple_dois_with_wait(
         doi: str, dest: Path | str = ".", resolvers: Sequence[object] | None = None
     ) -> FetchResult:
         fetched.append(doi)
-        return FetchResult(doi, True, Path(dest) / "x.json", None, None)
+        return FetchResult(doi, "crossref", Path(dest) / "x.json", None, None)
 
     slept: list[float] = []
     monkeypatch.setattr(cli, "fetch", fake_fetch)
@@ -95,7 +95,7 @@ def test_no_headless_flag_sets_browser_env(tmp_path: Path, monkeypatch: pytest.M
     def fake_fetch(
         doi: str, dest: Path | str = ".", resolvers: Sequence[object] | None = None
     ) -> FetchResult:
-        return FetchResult(doi, True, Path(dest) / "x.json", None, None)
+        return FetchResult(doi, "crossref", Path(dest) / "x.json", None, None)
 
     monkeypatch.setattr(cli, "fetch", fake_fetch)
 
@@ -111,7 +111,7 @@ def test_without_no_headless_flag_env_is_left_unset(
     def fake_fetch(
         doi: str, dest: Path | str = ".", resolvers: Sequence[object] | None = None
     ) -> FetchResult:
-        return FetchResult(doi, True, Path(dest) / "x.json", None, None)
+        return FetchResult(doi, "crossref", Path(dest) / "x.json", None, None)
 
     monkeypatch.setattr(cli, "fetch", fake_fetch)
 
@@ -128,7 +128,7 @@ def test_main_reads_dois_from_input_file(tmp_path: Path, monkeypatch: pytest.Mon
         doi: str, dest: Path | str = ".", resolvers: Sequence[object] | None = None
     ) -> FetchResult:
         fetched.append(doi)
-        return FetchResult(doi, True, Path(dest) / "x.json", Path(dest) / "x.pdf", "OpenAlex")
+        return FetchResult(doi, "crossref", Path(dest) / "x.json", Path(dest) / "x.pdf", "OpenAlex")
 
     monkeypatch.setattr(cli, "fetch", fake_fetch)
     monkeypatch.setattr(cli.time, "sleep", lambda s: None)
@@ -147,7 +147,7 @@ def test_main_log_option_writes_timestamped_diagnostics(
         doi: str, dest: Path | str = ".", resolvers: Sequence[object] | None = None
     ) -> FetchResult:
         logging.getLogger("doi_pdf.core").info("looking for a PDF for %s", doi)
-        return FetchResult(doi, True, Path(dest) / "x.json", None, None)
+        return FetchResult(doi, "crossref", Path(dest) / "x.json", None, None)
 
     monkeypatch.setattr(cli, "fetch", fake_fetch)
     monkeypatch.setattr(cli.time, "sleep", lambda s: None)
@@ -171,14 +171,14 @@ def test_main_log_option_reports_bad_path(tmp_path: Path, reset_doi_pdf_logging:
 def test_main_writes_csv_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import csv
 
-    # doi -> (crossref?, has_pdf?, resolver)
+    # doi -> (metadata source, has_pdf?, resolver)
     outcomes = {
         "10.1234/aaa": FetchResult(
-            "10.1234/aaa", True, tmp_path / "a.json", tmp_path / "a.pdf", "OpenAlex"
+            "10.1234/aaa", "crossref", tmp_path / "a.json", tmp_path / "a.pdf", "OpenAlex"
         ),
-        "10.1234/bbb": FetchResult("10.1234/bbb", True, tmp_path / "b.json", None, None),
+        "10.1234/bbb": FetchResult("10.1234/bbb", "datacite", tmp_path / "b.json", None, None),
         "10.1234/ccc": FetchResult(
-            "10.1234/ccc", False, None, tmp_path / "c.pdf", "Internet Archive Scholar"
+            "10.1234/ccc", None, None, tmp_path / "c.pdf", "Internet Archive Scholar"
         ),
     }
 
@@ -200,13 +200,14 @@ def test_main_writes_csv_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     by_doi = {r["doi"]: r for r in rows}
     assert by_doi["10.1234/aaa"] == {
         "doi": "10.1234/aaa",
-        "crossref_metadata": "yes",
+        "metadata": "crossref",
         "pdf": "yes",
         "resolver": "OpenAlex",
     }
+    assert by_doi["10.1234/bbb"]["metadata"] == "datacite"
     assert by_doi["10.1234/bbb"]["pdf"] == "no"
     assert by_doi["10.1234/bbb"]["resolver"] == ""
-    assert by_doi["10.1234/ccc"]["crossref_metadata"] == "no"
+    assert by_doi["10.1234/ccc"]["metadata"] == ""
     assert by_doi["10.1234/ccc"]["resolver"] == "Internet Archive Scholar"
 
 

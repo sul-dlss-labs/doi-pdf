@@ -13,7 +13,7 @@ import requests
 from . import browser
 from ._http import USER_AGENT, redact
 from .doi import doi_filename, normalize_doi
-from .metadata import crossref_metadata
+from .metadata import crossref_metadata, datacite_metadata
 from .resolvers import Resolver, default_resolvers
 
 log = logging.getLogger(__name__)
@@ -24,17 +24,23 @@ class FetchResult:
     """The outcome of :func:`fetch` for one DOI.
 
     - ``doi`` — the normalized DOI.
-    - ``crossref`` — whether CrossRef metadata was found (and ``json_path`` written).
+    - ``metadata`` — where the metadata came from (``"crossref"`` or
+      ``"datacite"``), or ``None`` if neither has a record.
     - ``json_path`` — where the metadata was written, or ``None`` if unavailable.
     - ``pdf_path`` — where the PDF was written, or ``None`` if none was found.
     - ``resolver`` — the name of the resolver that produced the PDF, or ``None``.
     """
 
     doi: str
-    crossref: bool
+    metadata: str | None
     json_path: Path | None
     pdf_path: Path | None
     resolver: str | None
+
+    @property
+    def crossref(self) -> bool:
+        """Whether the metadata came from CrossRef."""
+        return self.metadata == "crossref"
 
 
 def find_pdf_url(
@@ -145,12 +151,14 @@ def fetch(
     dest: Path | str = ".",
     resolvers: Sequence[Resolver] | None = None,
 ) -> FetchResult:
-    """Download the PDF and CrossRef metadata for *doi* into *dest*.
+    """Download the PDF and metadata for *doi* into *dest*.
 
-    Writes ``<stem>.json`` (when CrossRef has a record) and ``<stem>.pdf`` (when
-    a PDF could be located), and returns a :class:`FetchResult` describing what
-    happened. A missing CrossRef record is not fatal — PDF resolution is still
-    attempted.
+    Writes ``<stem>.json`` as ``{"source": "crossref" | "datacite", "record":
+    {...}}``, where ``record`` is the agency's native record (CrossRef first,
+    DataCite when CrossRef has none), and ``<stem>.pdf`` (when a PDF could be located), and
+    returns a :class:`FetchResult` describing what happened. Missing metadata,
+    or a failed metadata lookup (logged as a warning), is not fatal — PDF
+    resolution is still attempted.
 
     Resolvers are tried in order; each candidate URL is actually downloaded, and
     if a download fails the next resolver is tried. This way a resolver whose
@@ -164,13 +172,26 @@ def fetch(
     stem = doi_filename(doi)
 
     json_path: Path | None = None
-    try:
-        metadata = crossref_metadata(doi)
-    except LookupError:
-        log.info("no CrossRef metadata for %s", doi)
-    else:
+    source: str | None = None
+    for source_name, lookup in (("crossref", crossref_metadata), ("datacite", datacite_metadata)):
+        try:
+            metadata = lookup(doi)
+        except LookupError:
+            log.info("no %s metadata for %s", source_name, doi)
+            continue
+        except (requests.RequestException, ValueError) as exc:
+            # A timeout, 429/5xx or malformed response from one agency must not
+            # stop the PDF search; try the next agency and carry on.
+            log.warning("%s metadata lookup failed for %s: %s", source_name, doi, exc)
+            continue
         json_path = dest / f"{stem}.json"
-        json_path.write_text(json.dumps(metadata, indent=2))
+        # Wrap the agency's native record so the file says which schema it is
+        # in: CrossRef's ``message`` work and DataCite's JSON:API ``data``
+        # object share no layout (both even have a ``type`` key, meaning
+        # different things).
+        json_path.write_text(json.dumps({"source": source_name, "record": metadata}, indent=2))
+        source = source_name
+        break
 
     if resolvers is None:
         resolvers = default_resolvers()
@@ -197,7 +218,7 @@ def fetch(
 
     return FetchResult(
         doi=doi,
-        crossref=json_path is not None,
+        metadata=source,
         json_path=json_path,
         pdf_path=pdf_path,
         resolver=resolver_used,
