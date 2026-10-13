@@ -14,6 +14,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+from .browser import INSTALL_HINT, browser_available
 from .core import FetchResult, fetch
 from .doi import normalize_doi
 from .resolvers import RESOLVERS, build_resolvers
@@ -188,6 +189,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("provide at least one DOI, or --input FILE")
 
     resolvers = build_resolvers(args.resolver) if args.resolver else None
+
+    # The browser is optional, but without it some PDFs can't be retrieved;
+    # say so once up front rather than leaving it to --verbose.
+    if not browser_available():
+        print(
+            "warning: Playwright's Chromium isn't installed, so the landing-page "
+            "resolver and browser download fallback will be skipped. "
+            f"Install it with: {INSTALL_HINT}",
+            file=sys.stderr,
+        )
 
     # For a batch, show a progress bar instead of per-DOI output (unless verbose,
     # where the diagnostics stream would clash with the bar).

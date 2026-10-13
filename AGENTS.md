@@ -82,6 +82,10 @@ The central design split (please preserve it):
   actually downloads the candidate; if a download fails it moves to the next
   resolver, so an undownloadable URL (a bot-blocked publisher link) never blocks
   a later resolver from succeeding.
+- **The browser is optional at runtime.** Anything that launches Chromium first
+  checks `browser.browser_available()` (a cached, one-time probe launch) and
+  returns `None` when it isn't installed, so a missing browser skips that step
+  instead of failing the DOI.
 
 Default resolver order (free first, paid last):
 `openalex` → `internet-archive` → `landing-page` → `openalex-content`. The CLI

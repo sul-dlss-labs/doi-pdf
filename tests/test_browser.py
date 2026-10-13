@@ -5,8 +5,11 @@ the actual download paths are marked ``network``/``browser`` and need a real
 ``playwright install``.
 """
 
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Self
 
+import playwright.sync_api
 import pytest
 
 from doi_pdf import browser
@@ -98,6 +101,82 @@ def test_wait_out_challenge_stops_when_it_escalates_to_a_captcha() -> None:
     assert browser._wait_out_challenge(page, "https://x.example/") is False
     # Gave up as soon as the CAPTCHA appeared, not after the full budget.
     assert page.waits == 2
+
+
+# --- Is the browser installed? ------------------------------------------------
+
+
+@pytest.fixture
+def fresh_probe() -> Iterator[None]:
+    """Forget cached probe results before and after the test."""
+    browser._probe_launch.cache_clear()
+    yield
+    browser._probe_launch.cache_clear()
+
+
+class _FakeChromium:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def launch(self, headless: bool) -> None:
+        raise self._error
+
+
+class _FakePlaywright:
+    """Stands in for ``sync_playwright()``; every launch raises *error*."""
+
+    def __init__(self, error: Exception) -> None:
+        self.chromium = _FakeChromium(error)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+def test_probe_reports_a_missing_browser(
+    monkeypatch: pytest.MonkeyPatch, fresh_probe: None
+) -> None:
+    missing = playwright.sync_api.Error(
+        "BrowserType.launch: Executable doesn't exist at /nowhere/chrome-headless-shell"
+    )
+    monkeypatch.setattr(playwright.sync_api, "sync_playwright", lambda: _FakePlaywright(missing))
+    assert browser.browser_available(headless=True) is False
+
+
+def test_probe_lets_other_launch_failures_surface_later(
+    monkeypatch: pytest.MonkeyPatch, fresh_probe: None
+) -> None:
+    # e.g. headful with no display: not "missing", so the real launch raises it.
+    other = playwright.sync_api.Error("BrowserType.launch: Missing X server or $DISPLAY")
+    monkeypatch.setattr(playwright.sync_api, "sync_playwright", lambda: _FakePlaywright(other))
+    assert browser.browser_available(headless=False) is True
+
+
+def test_browser_available_with_no_browsers_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_probe: None
+) -> None:
+    # Real Playwright, pointed at an empty browser cache: needs no network and
+    # no browser download, just the Playwright package.
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path))
+    assert browser.browser_available(headless=True) is False
+    assert browser.browser_available(headless=False) is False
+
+
+@pytest.mark.browser
+def test_browser_available_when_installed(fresh_probe: None) -> None:
+    assert browser.browser_available() is True
+
+
+def test_download_pdf_skips_without_a_browser(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(browser, "browser_available", lambda headless=None: False)
+
+    def no_launch(p: object) -> None:
+        raise AssertionError("must not launch a browser")
+
+    monkeypatch.setattr(browser, "_launch_context", no_launch)
+    assert browser.download_pdf("https://x.example/a.pdf") is None
 
 
 # --- Live download paths (need network + `playwright install`) ----------------

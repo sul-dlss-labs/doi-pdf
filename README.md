@@ -37,11 +37,12 @@ resolution works.
 
 - Python 3.11 or newer.
 - **A Chromium browser for [Playwright](https://playwright.dev/python/),
-  installed once with `playwright install chromium`.** doi-pdf drives a headless
-  browser for the landing-page resolver and whenever a plain HTTP download
-  fails, so this isn't optional: without it, a DOI fails with an error as soon
-  as one of its candidate URLs needs the browser, even if a later source would
-  have worked. The browser goes into Playwright's shared cache (e.g.
+  installed once with `playwright install chromium`** (strongly recommended).
+  doi-pdf drives a headless browser for the landing-page resolver and whenever
+  a plain HTTP download fails. Without it, doi-pdf still runs and still gets
+  every PDF that downloads over plain HTTP, but skips those two steps, so some
+  PDFs it could have found are missed; the CLI warns about this at startup.
+  The browser goes into Playwright's shared cache (e.g.
   `~/Library/Caches/ms-playwright` on macOS, `~/.cache/ms-playwright` on Linux),
   not into the Python environment, so you only do this once per machine and
   Playwright version.

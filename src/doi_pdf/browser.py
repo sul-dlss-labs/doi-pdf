@@ -21,6 +21,10 @@ three things rather than on solving any challenge:
   seconds for a browser that passes their fingerprint checks, so we wait the
   interstitial out instead of giving up immediately.
 
+The browser itself is optional at runtime: if Playwright's Chromium has not
+been installed (``playwright install chromium``), :func:`browser_available`
+says so and callers skip the browser instead of failing.
+
 It is still best-effort: a site demanding an *interactive* CAPTCHA (one a human
 is meant to click/solve) is left alone -- ``download_pdf`` returns ``None`` and
 logs why. We do not attempt to defeat those. (AWS WAF, for one, escalates a
@@ -37,6 +41,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 from pathlib import Path
@@ -104,12 +109,56 @@ def _profile_dir() -> Path:
     return path
 
 
+def _headless() -> bool:
+    """Return whether the browser fallback runs headless (``DOI_PDF_HEADLESS``)."""
+    return os.environ.get("DOI_PDF_HEADLESS", "1") != "0"
+
+
+# What Playwright says when the browser for a launch has not been downloaded.
+_MISSING_BROWSER_MESSAGE = "Executable doesn't exist"
+
+# Shown wherever the missing browser is reported.
+INSTALL_HINT = "playwright install chromium"
+
+
+def browser_available(headless: bool | None = None) -> bool:
+    """Return whether Playwright's Chromium can be launched in this mode.
+
+    *headless* defaults to the configured mode (``DOI_PDF_HEADLESS``). The
+    modes need different binaries -- headless launches a separate
+    ``chromium-headless-shell`` -- so each is checked by actually launching
+    it once; the answer is cached for the process.
+    """
+    return _probe_launch(_headless() if headless is None else headless)
+
+
+@functools.cache
+def _probe_launch(headless: bool) -> bool:
+    """Launch and close Chromium once; ``False`` only if it is not installed.
+
+    Any other launch failure (e.g. a headful run with no display) counts as
+    available, so the real launch raises it as before: the probe only adds a
+    way to skip the browser, never a new way to fail.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+    from playwright.sync_api import sync_playwright
+
+    try:
+        with sync_playwright() as p:
+            p.chromium.launch(headless=headless).close()
+    except PlaywrightError as exc:
+        if _MISSING_BROWSER_MESSAGE in str(exc):
+            mode = "headless" if headless else "headful"
+            log.info("[browser] Chromium (%s) is not installed; run: %s", mode, INSTALL_HINT)
+            return False
+    return True
+
+
 def _launch_context(p: Playwright) -> BrowserContext:
     """Launch a persistent Chromium context configured to look ordinary."""
-    headless = os.environ.get("DOI_PDF_HEADLESS", "1") != "0"
     context = p.chromium.launch_persistent_context(
         user_data_dir=str(_profile_dir()),
-        headless=headless,
+        headless=_headless(),
         user_agent=BROWSER_USER_AGENT,
         extra_http_headers=BROWSER_CLIENT_HINTS,
         accept_downloads=True,
@@ -190,8 +239,13 @@ def download_pdf(url: str, timeout: float = 30.0) -> bytes | None:
     non-interactive bot-check interstitial if one appears. If the response is
     itself a PDF it is returned directly; if it is an HTML page, the embedded
     PDF is extracted (see :func:`_embedded_pdf`). Returns the body only when it
-    is a real PDF (``%PDF`` magic).
+    is a real PDF (``%PDF`` magic), and ``None`` without trying when Chromium
+    is not installed (see :func:`browser_available`).
     """
+    if not browser_available():
+        log.info("[browser] skipping %s: Chromium is not installed", redact(url))
+        return None
+
     # Imported lazily so importing doi_pdf does not require a browser install.
     from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import TimeoutError as PlaywrightTimeout
