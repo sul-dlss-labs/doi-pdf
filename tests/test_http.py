@@ -1,13 +1,20 @@
 """Tests for secret redaction in logged URLs (no network)."""
 
 import platform
+from importlib.metadata import version
 
 from doi_pdf._http import (
     BROWSER_CLIENT_HINTS,
     BROWSER_PLATFORM,
     BROWSER_USER_AGENT,
+    USER_AGENT,
     redact,
 )
+
+
+def test_user_agent_carries_the_package_version() -> None:
+    # Derived from the installed metadata, so it can't drift from pyproject.toml.
+    assert USER_AGENT.startswith(f"doi-pdf/{version('doi-pdf')} (")
 
 
 def test_redact_masks_api_key() -> None:
