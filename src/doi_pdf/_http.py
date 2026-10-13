@@ -4,10 +4,23 @@ from __future__ import annotations
 
 import platform
 import re
+from importlib.metadata import PackageNotFoundError, version
+
+
+def _package_version() -> str:
+    """Return the installed doi-pdf version (from pyproject.toml), or ``unknown``."""
+    try:
+        return version("doi-pdf")
+    except PackageNotFoundError:  # running from a source tree that isn't installed
+        return "unknown"
+
 
 # A descriptive User-Agent gets us into the OpenAlex / CrossRef "polite" pools
 # and avoids being treated as an anonymous bot by publishers.
-USER_AGENT = "doi-pdf/0.0.1 (https://github.com/sul-dlss-labs/doi-pdf; mailto:rialto-service@lists.stanford.edu)"
+USER_AGENT = (
+    f"doi-pdf/{_package_version()} "
+    "(https://github.com/sul-dlss-labs/doi-pdf; mailto:rialto-service@lists.stanford.edu)"
+)
 
 # Chrome major version advertised by the headless-browser fallback. Modern
 # Chrome "reduces" its UA to ``Chrome/<major>.0.0.0``, so the major plus the OS

@@ -18,10 +18,11 @@ def normalize_doi(value: str) -> str:
     URL, a ``doi:`` prefixed string, etc., and returns the canonical bare DOI
     in lower case.
 
-    Raises ``ValueError`` if *value* does not contain a recognizable DOI.
+    Raises ``ValueError`` if *value* does not contain a recognizable DOI, and
+    ``TypeError`` if it is not a string at all.
     """
     if not isinstance(value, str):
-        raise ValueError(f"not a DOI: {value!r}")
+        raise TypeError(f"DOI must be a string, not {type(value).__name__}: {value!r}")
     text = _PREFIX_RE.sub("", value.strip()).strip()
     if not _DOI_RE.fullmatch(text):
         raise ValueError(f"not a DOI: {value!r}")

@@ -1,17 +1,19 @@
 # Contributing to doi-pdf
 
 doi-pdf is a small CLI + library that, given a DOI, finds an open access PDF and
-downloads it alongside the item's CrossRef metadata. This file is for humans and
-coding agents who want to work on it.
+downloads it alongside the item's CrossRef (or, failing that, DataCite)
+metadata. This file is for humans and coding agents who want to work on it.
 
 ## Setup
 
-The project uses [uv](https://docs.astral.sh/uv/) and targets Python 3.15
-(pinned in `.python-version`).
+The project uses [uv](https://docs.astral.sh/uv/) and supports Python 3.11+
+(`requires-python`). CI tests the 3.11 floor and the newest release (3.15).
+Don't use language or stdlib features newer than 3.11: `ty` checks against 3.11
+to catch them. `.python-version` is gitignored, so pin a local interpreter there
+if you like.
 
 ```sh
-uv venv                              # create the virtualenv
-uv pip install -e '.[dev]'           # install the package + dev tools
+uv sync --extra dev                  # create the venv; install the package + locked dev tools
 uv run playwright install chromium   # browser used by the landing-page resolver
 ```
 
@@ -32,13 +34,19 @@ uses [ty](https://github.com/astral-sh/ty). There is no mypy or black. CI
 (`.github/workflows/test.yml`) runs `ruff check`, `ruff format --check`,
 `ty check`, and the offline test subset on every PR.
 
+Dependency and tool versions are pinned in the committed `uv.lock`, and CI
+installs exactly those (`UV_LOCKED=1`), so a new ruff or ty release can't add
+lint rules to CI on its own. Upgrade on purpose, e.g. `uv lock --upgrade-package
+ruff`, and fix whatever the new version reports in the same change.
+
 The CLI takes one or more DOIs and/or `--input FILE` (one DOI per line; first CSV
-column; `-` for stdin), writes `<stem>.pdf`/`<stem>.json` per DOI, and pauses
+column; `-` for stdin), writes `<stem>.pdf`/`<stem>.json` per DOI (the JSON is
+`{"source": "crossref"|"datacite", "record": <native record>}`), and pauses
 `--wait` seconds between DOIs (default 1.0) to be polite. For more than one DOI
 it shows a tqdm progress bar instead of per-DOI output. `--report FILE` writes a
-CSV (`doi, crossref_metadata, pdf, resolver`); `--log FILE` writes timestamped
-diagnostics. `fetch()` returns a `FetchResult` (`doi`, `crossref`, `json_path`,
-`pdf_path`, `resolver`).
+CSV (`doi, metadata, pdf, resolver`); `--log FILE` writes timestamped
+diagnostics. `fetch()` returns a `FetchResult` (`doi`, `metadata`, `json_path`,
+`pdf_path`, `resolver`); `metadata` is `"crossref"`, `"datacite"`, or `None`.
 
 Type checking is done with [ty](https://github.com/astral-sh/ty); there is no
 mypy. Everything in `src/` and `tests/` is fully type annotated — keep it that
@@ -49,7 +57,7 @@ way (annotate new functions, methods, and test helpers).
 ```
 src/doi_pdf/
   doi.py        normalize_doi(), doi_filename() — DOI parsing (pure, no I/O)
-  metadata.py   crossref_metadata() — CrossRef lookup
+  metadata.py   crossref_metadata(), datacite_metadata() — metadata lookup
   resolvers.py  the pluggable resolvers + the RESOLVERS registry
   browser.py    headless-browser PDF download / embedded-PDF extraction
   core.py       find_pdf_url() and fetch() — coordination + download
@@ -67,7 +75,7 @@ The central design split (please preserve it):
   a new way of *finding* a PDF, write a resolver and register it in `RESOLVERS`.
 - **The downloader turns a URL into PDF *bytes*.** `core._download_pdf` tries a
   plain HTTP GET, then falls back to a headless browser (`browser.download_pdf`),
-  which also extracts PDFs embedded in HTML viewer pages (e.g. eScholarship). To
+  which also extracts PDFs embedded in HTML viewer pages (e.g. OJS galleys). To
   add a new way of *retrieving* bytes from a stubborn URL, extend the downloader,
   not the resolvers.
 - **`fetch()` drives both with fall-through.** It tries each resolver and

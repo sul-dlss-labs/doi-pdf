@@ -3,9 +3,9 @@
 Some publishers refuse a plain ``requests`` download (missing referer/cookies,
 JavaScript-gated links, light bot checks) but will serve the PDF to a real
 browser. Others resolve a "PDF" URL to an HTML *viewer* page that only embeds
-the PDF (e.g. eScholarship and many institutional repositories). This module
-drives Chromium to handle both: it retries the download and, when it lands on
-an HTML page, digs out the embedded PDF.
+the PDF (e.g. OJS journal article pages and many institutional repositories).
+This module drives Chromium to handle both: it retries the download and, when
+it lands on an HTML page, digs out the embedded PDF.
 
 To get past CDN bot walls (Cloudflare, AWS WAF) without logging in, it leans on
 three things rather than on solving any challenge:
@@ -23,7 +23,9 @@ three things rather than on solving any challenge:
 
 It is still best-effort: a site demanding an *interactive* CAPTCHA (one a human
 is meant to click/solve) is left alone -- ``download_pdf`` returns ``None`` and
-logs why. We do not attempt to defeat those.
+logs why. We do not attempt to defeat those. (AWS WAF, for one, escalates a
+failed JavaScript challenge to such a CAPTCHA; we stop waiting as soon as it
+does.)
 
 Environment variables:
 
@@ -53,6 +55,14 @@ class _ChallengeProbe(Protocol):
 
     def query_selector(self, selector: str, /) -> object | None: ...
 
+    def evaluate(self, expression: str, /) -> object: ...
+
+
+class _ChallengeWaiter(_ChallengeProbe, Protocol):
+    """A :class:`_ChallengeProbe` that can also pause, for waiting a challenge out."""
+
+    def wait_for_timeout(self, timeout: float, /) -> None: ...
+
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +86,14 @@ _CHALLENGE_TITLES = {"just a moment...", "attention required! | cloudflare"}
 _CHALLENGE_SELECTOR = (
     "#challenge-form, #challenge-running, iframe[src*='challenges.cloudflare.com']"
 )
+
+# AWS WAF's challenge and CAPTCHA interstitials both configure themselves via an
+# inline ``window.gokuProps``. We key on that rather than on any ``awswaf.com``
+# script, because ordinary pages may load AWS's ``challenge.js`` SDK too.
+_AWS_WAF_INTERSTITIAL_JS = "() => typeof window.gokuProps !== 'undefined'"
+# On an AWS WAF interstitial, this script means it is the interactive CAPTCHA
+# (a "Human Verification" puzzle), which never clears without a person.
+_AWS_WAF_CAPTCHA_SELECTOR = "script[src*='.captcha.awswaf.com/']"
 
 
 def _profile_dir() -> Path:
@@ -102,6 +120,16 @@ def _launch_context(p: Playwright) -> BrowserContext:
     return context
 
 
+def _is_aws_waf_interstitial(page: _ChallengeProbe) -> bool:
+    """Return whether *page* is an AWS WAF challenge or CAPTCHA interstitial."""
+    from playwright.sync_api import Error as PlaywrightError
+
+    try:
+        return page.evaluate(_AWS_WAF_INTERSTITIAL_JS) is True
+    except PlaywrightError:
+        return False
+
+
 def _looks_like_challenge(page: _ChallengeProbe) -> bool:
     """Return whether *page* is currently showing a CDN bot-check interstitial."""
     from playwright.sync_api import Error as PlaywrightError
@@ -110,17 +138,31 @@ def _looks_like_challenge(page: _ChallengeProbe) -> bool:
         title = (page.title() or "").strip().lower()
         if title in _CHALLENGE_TITLES:
             return True
-        return page.query_selector(_CHALLENGE_SELECTOR) is not None
+        if page.query_selector(_CHALLENGE_SELECTOR) is not None:
+            return True
+    except PlaywrightError:
+        return False
+    return _is_aws_waf_interstitial(page)
+
+
+def _looks_like_captcha(page: _ChallengeProbe) -> bool:
+    """Return whether *page* is an interactive CAPTCHA, which we never attempt."""
+    from playwright.sync_api import Error as PlaywrightError
+
+    if not _is_aws_waf_interstitial(page):
+        return False
+    try:
+        return page.query_selector(_AWS_WAF_CAPTCHA_SELECTOR) is not None
     except PlaywrightError:
         return False
 
 
-def _wait_out_challenge(page: Page, url: str) -> bool:
+def _wait_out_challenge(page: _ChallengeWaiter, url: str) -> bool:
     """Wait for a non-interactive challenge on *page* to clear itself.
 
     Returns whether the interstitial went away within :data:`_CHALLENGE_TIMEOUT_S`.
     We only *wait*; an interactive CAPTCHA that needs a human is never solved
-    here, it simply times out and we move on.
+    here. If the challenge escalates to one, we stop waiting at once.
     """
     log.info("[browser] bot-check interstitial at %s; waiting for it to clear", redact(url))
     waited_ms = 0.0
@@ -128,6 +170,11 @@ def _wait_out_challenge(page: Page, url: str) -> bool:
     while waited_ms < budget_ms:
         page.wait_for_timeout(1000)
         waited_ms += 1000
+        if _looks_like_captcha(page):
+            log.info(
+                "[browser] interstitial escalated to an interactive CAPTCHA; not attempting it"
+            )
+            return False
         if not _looks_like_challenge(page):
             log.info("[browser] interstitial cleared after %.0fs", waited_ms / 1000)
             return True
@@ -182,7 +229,9 @@ def download_pdf(url: str, timeout: float = 30.0) -> bytes | None:
             # self-clearing challenge a chance before treating the page as real.
             # Whether or not it clears, we still fall through to PDF extraction
             # below -- waiting is a bonus, never a new way to fail.
-            if _looks_like_challenge(page):
+            if _looks_like_captcha(page):
+                log.info("[browser] interactive CAPTCHA at %s; not attempting it", redact(url))
+            elif _looks_like_challenge(page):
                 _wait_out_challenge(page, url)
 
             # If the navigation itself delivered the PDF, use it. (After a

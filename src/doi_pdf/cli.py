@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 DEFAULT_WAIT_SECONDS = 1.0
 
 # Column header for the --report CSV.
-REPORT_COLUMNS = ("doi", "crossref_metadata", "pdf", "resolver")
+REPORT_COLUMNS = ("doi", "metadata", "pdf", "resolver")
 
 
 def _configure_logging(verbose: bool, log_path: str | None) -> None:
@@ -75,10 +75,10 @@ def _read_dois(path: str) -> list[str]:
 def _report_row(doi: str, result: FetchResult | None) -> dict[str, str]:
     """Build a CSV report row for *doi* from its *result* (``None`` if it errored)."""
     if result is None:
-        return {"doi": doi, "crossref_metadata": "no", "pdf": "no", "resolver": ""}
+        return {"doi": doi, "metadata": "", "pdf": "no", "resolver": ""}
     return {
         "doi": doi,
-        "crossref_metadata": "yes" if result.crossref else "no",
+        "metadata": result.metadata or "",
         "pdf": "yes" if result.pdf_path else "no",
         "resolver": result.resolver or "",
     }
@@ -101,7 +101,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog="doi-pdf",
-        description="Given a DOI, find an open access PDF and its CrossRef metadata.",
+        description="Given a DOI, find an open access PDF and its CrossRef or DataCite metadata.",
     )
     parser.add_argument(
         "doi",
@@ -164,7 +164,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "-c",
         "--report",
         metavar="FILE",
-        help="write a CSV report (doi, crossref_metadata, pdf, resolver) to FILE",
+        help="write a CSV report (doi, metadata, pdf, resolver) to FILE",
     )
     args = parser.parse_args(argv)
     # Pick up OPENALEX_API_KEY (and friends) from a local .env if present.
@@ -205,6 +205,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 result: FetchResult | None = fetch(doi, dest=args.dest, resolvers=resolvers)
             except Exception as exc:  # one bad DOI shouldn't abort the whole batch
+                # The traceback goes to --verbose/--log; the console gets one line.
+                log.exception("error processing %s", doi)
                 result = None
                 message = f"error: {doi}: {exc}"
                 bar.write(message) if show_progress else print(message, file=sys.stderr)
@@ -214,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pdf_ok += 1
             else:
                 no_pdf += 1
-            if result is None or not result.crossref:
+            if result is None or result.metadata is None:
                 no_meta += 1
 
             if not show_progress and result is not None:
