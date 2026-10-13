@@ -14,6 +14,7 @@ import requests
 
 from doi_pdf import core, find_pdf_url
 from doi_pdf.core import fetch
+from doi_pdf.metadata import MetadataResponseError
 
 
 class RecordingResolver:
@@ -229,7 +230,7 @@ def _timeout(doi: str) -> dict[str, object]:
 
 
 def _malformed(doi: str) -> dict[str, object]:
-    raise ValueError(f"unexpected response for {doi}")
+    raise MetadataResponseError(f"unexpected response for {doi}")
 
 
 def test_fetch_tries_datacite_when_crossref_errors(

@@ -13,7 +13,7 @@ import requests
 from . import browser
 from ._http import USER_AGENT, redact
 from .doi import doi_filename, normalize_doi
-from .metadata import crossref_metadata, datacite_metadata
+from .metadata import MetadataResponseError, crossref_metadata, datacite_metadata
 from .resolvers import Resolver, default_resolvers
 
 log = logging.getLogger(__name__)
@@ -179,7 +179,7 @@ def fetch(
         except LookupError:
             log.info("no %s metadata for %s", source_name, doi)
             continue
-        except (requests.RequestException, ValueError) as exc:
+        except (requests.RequestException, MetadataResponseError) as exc:
             # A timeout, 429/5xx or malformed response from one agency must not
             # stop the PDF search; try the next agency and carry on.
             log.warning("%s metadata lookup failed for %s: %s", source_name, doi, exc)

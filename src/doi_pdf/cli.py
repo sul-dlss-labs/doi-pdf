@@ -205,6 +205,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 result: FetchResult | None = fetch(doi, dest=args.dest, resolvers=resolvers)
             except Exception as exc:  # one bad DOI shouldn't abort the whole batch
+                # The traceback goes to --verbose/--log; the console gets one line.
+                log.exception("error processing %s", doi)
                 result = None
                 message = f"error: {doi}: {exc}"
                 bar.write(message) if show_progress else print(message, file=sys.stderr)

@@ -17,6 +17,10 @@ DATACITE_API = "https://api.datacite.org/dois/"
 log = logging.getLogger(__name__)
 
 
+class MetadataResponseError(Exception):
+    """A registration agency answered, but not with a usable record."""
+
+
 def _get_record(api: str, envelope: str, agency: str, doi: str) -> dict[str, Any]:
     """GET *doi* from a registration agency's REST *api* and unwrap *envelope*.
 
@@ -26,8 +30,8 @@ def _get_record(api: str, envelope: str, agency: str, doi: str) -> dict[str, Any
 
     Raises ``LookupError`` only when the agency has no record (HTTP 404).
     Other failures are not ``LookupError``: ``requests.RequestException`` for
-    transport and HTTP errors, and ``ValueError`` for a body that is not JSON
-    or lacks *envelope*.
+    transport and HTTP errors and for a body that is not JSON, and
+    :class:`MetadataResponseError` for JSON that lacks the *envelope* object.
     """
     doi = normalize_doi(doi)
     url = api + quote(doi, safe="/")
@@ -42,7 +46,9 @@ def _get_record(api: str, envelope: str, agency: str, doi: str) -> dict[str, Any
     resp.raise_for_status()
     body = resp.json()
     if not isinstance(body, dict) or not isinstance(body.get(envelope), dict):
-        raise ValueError(f"unexpected {agency} response for {doi}: no {envelope!r} object")
+        raise MetadataResponseError(
+            f"unexpected {agency} response for {doi}: no {envelope!r} object"
+        )
     record: dict[str, Any] = body[envelope]
     return record
 

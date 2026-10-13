@@ -15,6 +15,10 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # Fail rather than re-resolve if uv.lock is out of date with pyproject.toml,
+      # so CI runs exactly the tool versions that were tested locally.
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -26,10 +30,8 @@ jobs:
       - name: Install Python (pinned in .python-version)
         run: uv python install
 
-      - name: Create the virtualenv and install
-        run: |
-          uv venv
-          uv pip install -e '.[dev]'
+      - name: Install the locked dependencies
+        run: uv sync --extra dev
 
       - name: Lint
         run: uv run ruff check

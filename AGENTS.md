@@ -10,8 +10,7 @@ The project uses [uv](https://docs.astral.sh/uv/) and targets Python 3.15
 (pinned in `.python-version`).
 
 ```sh
-uv venv                              # create the virtualenv
-uv pip install -e '.[dev]'           # install the package + dev tools
+uv sync --extra dev                  # create the venv; install the package + locked dev tools
 uv run playwright install chromium   # browser used by the landing-page resolver
 ```
 
@@ -31,6 +30,11 @@ Linting and formatting use [ruff](https://docs.astral.sh/ruff/); type checking
 uses [ty](https://github.com/astral-sh/ty). There is no mypy or black. CI
 (`.github/workflows/test.yml`) runs `ruff check`, `ruff format --check`,
 `ty check`, and the offline test subset on every PR.
+
+Dependency and tool versions are pinned in the committed `uv.lock`, and CI
+installs exactly those (`UV_LOCKED=1`), so a new ruff or ty release can't add
+lint rules to CI on its own. Upgrade on purpose, e.g. `uv lock --upgrade-package
+ruff`, and fix whatever the new version reports in the same change.
 
 The CLI takes one or more DOIs and/or `--input FILE` (one DOI per line; first CSV
 column; `-` for stdin), writes `<stem>.pdf`/`<stem>.json` per DOI (the JSON is

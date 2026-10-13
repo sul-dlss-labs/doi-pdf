@@ -3,6 +3,8 @@
 These need no network and should always run fast.
 """
 
+from typing import cast
+
 import pytest
 
 from doi_pdf import doi_filename, normalize_doi
@@ -49,6 +51,12 @@ def test_normalize_doi_roundtrips_bare_dois(doi: str) -> None:
 def test_normalize_doi_rejects_garbage(value: str) -> None:
     with pytest.raises(ValueError):
         normalize_doi(value)
+
+
+def test_normalize_doi_rejects_non_strings_with_type_error() -> None:
+    # cast: deliberately pass a non-str through the str-typed parameter.
+    with pytest.raises(TypeError):
+        normalize_doi(cast(str, None))
 
 
 def test_doi_filename_matches_readme_example() -> None:

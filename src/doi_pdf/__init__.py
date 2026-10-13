@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from .core import FetchResult, fetch, find_pdf_url
 from .doi import doi_filename, normalize_doi
-from .metadata import crossref_metadata, datacite_metadata
+from .metadata import MetadataResponseError, crossref_metadata, datacite_metadata
 from .resolvers import (
     RESOLVERS,
     InternetArchiveScholarResolver,
@@ -16,20 +18,26 @@ from .resolvers import (
     default_resolvers,
 )
 
+# A library leaves logging output to the application: diagnostics appear only
+# when a handler is configured (the CLI's --verbose / --log), never through
+# logging's last-resort stderr handler.
+logging.getLogger(__name__).addHandler(logging.NullHandler())
+
 __all__ = [
-    "normalize_doi",
-    "doi_filename",
-    "crossref_metadata",
-    "datacite_metadata",
-    "Resolver",
-    "OpenAlexResolver",
-    "OpenAlexContentResolver",
+    "RESOLVERS",
+    "FetchResult",
     "InternetArchiveScholarResolver",
     "LandingPageResolver",
-    "RESOLVERS",
+    "MetadataResponseError",
+    "OpenAlexContentResolver",
+    "OpenAlexResolver",
+    "Resolver",
     "build_resolvers",
+    "crossref_metadata",
+    "datacite_metadata",
     "default_resolvers",
-    "find_pdf_url",
+    "doi_filename",
     "fetch",
-    "FetchResult",
+    "find_pdf_url",
+    "normalize_doi",
 ]

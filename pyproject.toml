@@ -1,7 +1,7 @@
 [project]
 name = "doi-pdf"
 version = "0.0.1"
-description = "Given a DOI, find an open access PDF and its CrossRef metadata."
+description = "Given a DOI, find an open access PDF and its CrossRef or DataCite metadata."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

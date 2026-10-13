@@ -161,6 +161,40 @@ def test_main_log_option_writes_timestamped_diagnostics(
     assert re.search(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", text)
 
 
+def test_main_logs_traceback_for_a_failed_doi_and_continues(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reset_doi_pdf_logging: None,
+) -> None:
+    log_file = tmp_path / "run.log"
+    seen: list[str] = []
+
+    def fake_fetch(
+        doi: str, dest: Path | str = ".", resolvers: Sequence[object] | None = None
+    ) -> FetchResult:
+        seen.append(doi)
+        if doi == "10.1234/bad":
+            raise RuntimeError("resolver blew up")
+        return FetchResult(doi, "crossref", Path(dest) / "x.json", None, None)
+
+    monkeypatch.setattr(cli, "fetch", fake_fetch)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+
+    main(["10.1234/bad", "10.1234/good", "--dest", str(tmp_path), "--log", str(log_file)])
+
+    assert seen == ["10.1234/bad", "10.1234/good"]  # the batch carried on
+    text = log_file.read_text()
+    assert "error processing 10.1234/bad" in text
+    assert "Traceback" in text and "RuntimeError: resolver blew up" in text
+    # The console gets a one-line error, not the traceback. (With a progress
+    # bar, the line is written through tqdm to stdout.)
+    captured = capsys.readouterr()
+    console = captured.out + captured.err
+    assert "error: 10.1234/bad: resolver blew up" in console
+    assert "Traceback" not in console
+
+
 def test_main_log_option_reports_bad_path(tmp_path: Path, reset_doi_pdf_logging: None) -> None:
     # A directory that does not exist should fail cleanly via parser.error.
     bad = tmp_path / "missing-dir" / "run.log"
